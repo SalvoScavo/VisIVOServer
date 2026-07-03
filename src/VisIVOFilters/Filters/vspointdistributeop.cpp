@@ -638,15 +638,20 @@ bool VSPointDistributeOp::initializeEmptyGrid(VSTable& tableGrid, const std::vec
     // Fill the table with zeros
     gridHandle.totEle = m_gridPts;
 
-    while (gridHandle.totEle > 0) {
-        gridHandle.fromRow = gridHandle.startCounter;
-        gridHandle.toRow = std::min(gridHandle.fromRow + m_numNewPts - 1, m_gridPts - 1);
+    if(m_rank==0) //only rank 0 write phisically
+    {
+        while (gridHandle.totEle > 0) 
+        {
+            gridHandle.fromRow = gridHandle.startCounter;
+            gridHandle.toRow = std::min(gridHandle.fromRow + m_numNewPts - 1, m_gridPts - 1);
 
-        tableGrid.putColumn(gridList, numOfField, gridHandle.fromRow, gridHandle.toRow, m_grid);
+            tableGrid.putColumn(gridList, numOfField, gridHandle.fromRow, gridHandle.toRow, m_grid);
 
-        gridHandle.totEle -= (gridHandle.toRow - gridHandle.fromRow + 1);
-        gridHandle.startCounter = gridHandle.toRow + 1;
+            gridHandle.totEle -= (gridHandle.toRow - gridHandle.fromRow + 1);
+            gridHandle.startCounter = gridHandle.toRow + 1;
+        }
     }
+    
 
     return true;
 }
@@ -990,28 +995,45 @@ bool VSPointDistributeOp::execute()
     m_realOutFilename.push_back(fileNameOutput);
 
     // Clean existing tab
-    remove(fileNameOutput.c_str());
-    tableGrid.setLocator(fileNameOutput);
-    
-    configureTableGrid(tableGrid, fieldList);
+    if(m_rank == 0) //only rank 0 clean and create the table. 
+    {
+        remove(fileNameOutput.c_str());
+        tableGrid.setLocator(fileNameOutput);
+        configureTableGrid(tableGrid, fieldList);
     
     //  Create Empty Binary File
-    unsigned int* gridList = nullptr;
-    if (!initializeEmptyGrid(tableGrid, fieldList, gridList)) {
-        delete[] colList;
-        return false;
+        unsigned int* gridList = nullptr;
+        if (!initializeEmptyGrid(tableGrid, fieldList, gridList)) 
+        {
+            delete[] colList;
+            return false;
+        }
     }
-    
     //////////////////////
     /////
     // Start Point Distribution
     ////
     
+    //calcuating chunks
+    int chunk_start = totRows / m_size;
+    int rest = totRows % m_size;
+    int my_chunk;
+    if(m_rank < rest)
+    {
+        gridHandle.totEle = chunk_start +1;
+        my_chunk = m_rank * (chunk_start + 1);
+    }else 
+    {
+        gridHandle.totEle = chunk_start;
+        my_chunk  = (m_rank * chunk_start) + rest;
+    }
+
+
     // set cashed grid on memory
     unsigned long long int gridIndex[2];  //limits of cashed grid
     gridIndex[0]=0;
     gridIndex[1]=m_numNewPts-1;
-    gridHandle.totEle=totRows;
+   // gridHandle.totEle=totRows;
     gridHandle.startCounter=0;
     colList[0]=m_colList[0];
     colList[1]=m_colList[1];
@@ -1034,8 +1056,9 @@ bool VSPointDistributeOp::execute()
         // Table downLoad
         gridHandle.fromRow=gridHandle.startCounter;
         gridHandle.toRow=gridHandle.fromRow+m_nOfRow-1;
-        if(gridHandle.toRow>totRows-1)
-            gridHandle.toRow=totRows-1;
+        unsigned long long int maxLocalRow = gridHandle.fromRow + gridHandle.totEle - 1;
+        if(gridHandle.toRow>maxLocalRow)
+            gridHandle.toRow=maxLocalRow;
         m_tables[0]->getColumn(colList,m_nOfCol, gridHandle.fromRow,gridHandle. toRow, m_fArray);
         
         if (m_ngp) {
@@ -1058,8 +1081,34 @@ bool VSPointDistributeOp::execute()
         if(gridHandle.totEle<0) gridHandle.totEle=0;
     } 
     if(m_avg) nOfField=3;
-    tableGrid.putColumn(gridList,nOfField,gridIndex[0],gridIndex[1],m_grid);  
+
+    #ifdef VSMPI
+
+    float **global_grid; //only main process allocate the full grid
+    if(m_rank == 0)
+    {
+        global_grid = new float*[nOfField];
+        for(int i = 0 ;i<nOfField;i++)
+            global_grid[i]= new float[m_numNewPts];
+    }
+
+    for(int i =0 ; i< nOfField; i++)
+    {
+            MPI_Reduce(m_grid[i],m_rank==0 ? global_grid[i]: nullptr,m_numNewPts,MPI_FLOAT,MPI_SUM,0,m_comm);
     
+    }
+
+    if(m_rank == 0 )
+    {
+        tableGrid.putColumn(gridList,nOfField,gridIndex[0],gridIndex[1],global_grid);  
+                for (int i = 0; i < nOfField; i++) {
+            delete[] global_grid[i];
+        }
+        delete[] global_grid;
+    }
+    #else
+        tableGrid.putColumn(gridList, nOfField, gridIndex[0], gridIndex[1], m_grid);
+    #endif
     m_executeDone=true;
     if(colList!=NULL) delete [] colList;
     if(gridList!=NULL)delete [] gridList;
