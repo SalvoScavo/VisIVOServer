@@ -83,7 +83,7 @@ startFilter::startFilter(std::map<std::string,std::string> appParameters)
     int rank=0, size=1, ierr;
 #ifdef VSMPI
     m_VS_COMM=newcomm;
-    MPI_Errhandler_set(MPI_COMM_WORLD,MPI_ERRORS_RETURN);
+    MPI_Comm_set_errhandler(MPI_COMM_WORLD,MPI_ERRORS_RETURN);
     ierr=MPI_Comm_size (m_VS_COMM, &size);
     if(ierr!=MPI_SUCCESS) return;
     ierr=MPI_Comm_rank (m_VS_COMM, &rank);
