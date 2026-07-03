@@ -18,6 +18,9 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include <cstdlib>
+#include <omp.h>
+#include <mpi.h>
+
 #include <cstring>
 #include <iostream>
 #include <sstream>
