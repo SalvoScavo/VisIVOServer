@@ -19,7 +19,7 @@
  ***************************************************************************/
 #include <cstdlib>
 #include <omp.h>
-#include <mpi.h>
+
 
 #include <cstring>
 #include <iostream>
@@ -67,7 +67,11 @@ VSPointDistributeOp::VSPointDistributeOp()
     m_SpacingSet=false;
     m_gridSpacing=false;
     m_avg=false;
+
+    m_rank = 0;
+    m_size = 1;
 }
+
 
 //---------------------------------------------------------------------
 VSPointDistributeOp::~VSPointDistributeOp()
@@ -82,6 +86,18 @@ VSPointDistributeOp::~VSPointDistributeOp()
 	if(m_grid != NULL)
 		delete [] m_grid;
 }
+
+#ifdef VSMPI
+void VSPointDistributeOp::setMPI_Comm(MPI_Comm comm) {
+    m_comm = comm; 
+    
+  
+    MPI_Comm_rank(m_comm, &m_rank);
+    MPI_Comm_size(m_comm, &m_size);
+}
+#endif
+
+
 //---------------------------------------------------------------------
 void VSPointDistributeOp::printHelp()
 //---------------------------------------------------------------------
@@ -111,6 +127,7 @@ void VSPointDistributeOp::printHelp()
     std::cout<<"--file Input table filename."<<std::endl;
     
     std::cout<<"--help produce this output."<<std::endl;
+    
     
     return;
     

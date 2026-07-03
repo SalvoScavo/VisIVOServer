@@ -859,6 +859,9 @@ startFilter::startFilter(std::map<std::string,std::string> appParameters)
                 
                 VSPointDistributeOp op;
                 op.setParameters(appParameters);
+                #ifdef VSMPI
+                    op.setMPI_Comm(m_VS_COMM);
+                #endif
                 op.addInput(&table);
                 op.execute();
                 valOutFilename=op.realOutFilename();

@@ -20,6 +20,7 @@
 #ifndef VSPOINTDISTRIBUTEOP_H
 #define VSPOINTDISTRIBUTEOP_H
 #include "vstableop.h"
+#include <mpi.h>
 
 /**
 	@author Ugo Becciani <ugo.becciani@oact.inaf.it>
@@ -64,6 +65,13 @@ class VSPointDistributeOp: public VSTableOp
   bool m_gridSpacing;
   bool m_avg;
   bool m_periodic;
+  int m_rank;
+  int m_size;
+
+    #ifdef VSMPI
+        MPI_Comm m_comm;
+    #endif
+
   GridHandle gridHandle;
 
   bool allocateArray(int nField);
@@ -96,6 +104,9 @@ class VSPointDistributeOp: public VSTableOp
     VSPointDistributeOp();
     ~VSPointDistributeOp();
     void printHelp();
+    #ifdef VSMPI
+    void setMPI_Comm(MPI_Comm comm);
+    #endif
     bool execute();
     bool getOrigin(float *origin); 
     bool getSpacing(float *spacing); 
