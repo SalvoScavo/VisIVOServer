@@ -49,10 +49,17 @@ std::map<std::string, std::string>::iterator iter;
 bool paramFileGiven=false;
 
 #ifdef VSMPI
-
-MPI_Init (&argc, &argv);
+int provided;
+MPI_Init_thread(&argc,&argv,MPI_THREAD_FUNNELED,&provided);
+if(provided < MPI_THREAD_FUNNELED)
+	{
+		std::cerr<<"Attention! Thread level not supported from MPI implementation!"<<std::endl;
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	}
 MPI_Comm_size (MPI_COMM_WORLD, &size);
 MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+
+if(rank == 0) std::cout<<"Start MPI (size= "<<size<<")"<<std::endl;
 
 #endif
 
@@ -126,17 +133,27 @@ if(MpiSize>size) MpiSize=size;
 // set size ==> size=1 means serial
 ///////    
 #ifdef VSMPI
+	
+/* Old style comunicator creation
 	int *ranks;
+	
 	ranks= new int[MpiSize];
     for(int i=0;i<MpiSize;i++) ranks[i]=i;
     
-    // create a new communicator
+	
+     create a new communicator
     MPI_Group origGroup, newGroup;
     MPI_Comm NEW_COMM;    
     MPI_Comm_group(MPI_COMM_WORLD, &origGroup);
     MPI_Group_incl(origGroup,MpiSize,ranks,&newGroup);
     MPI_Comm_create(MPI_COMM_WORLD, newGroup, &NEW_COMM); 
-    startFilter startFilter(appParameters,NEW_COMM); //test of MPI
+   */
+
+  	int color = (rank < MpiSize) ? 0 : MPI_UNDEFINED;
+
+	MPI_Comm NEW_COMM;
+	MPI_Comm_split(MPI_COMM_WORLD, color, rank, &NEW_COMM);
+	startFilter startFilter(appParameters,NEW_COMM); //test of MPI
   
 //////////
     
@@ -146,8 +163,9 @@ if(MpiSize>size) MpiSize=size;
 MPI_Barrier(MPI_COMM_WORLD);
 MPI_Finalize();
 
-#endif
+#else
 startFilter startFilter(appParameters);
+#endif
 return EXIT_SUCCESS;
 }
 
