@@ -94,6 +94,7 @@ void VSPointDistributeOp::setMPI_Comm(MPI_Comm comm) {
   
     MPI_Comm_rank(m_comm, &m_rank);
     MPI_Comm_size(m_comm, &m_size);
+    if(m_rank==0) std::clog<<"Recv Comunicator, my size is "<<m_size <<" (Rank "<<m_rank<<")"<<std::endl;
 }
 #endif
 
@@ -498,13 +499,16 @@ bool VSPointDistributeOp::allocateColumnList(unsigned int*& colList, const std::
 
 bool VSPointDistributeOp::initializeGrid(const std::vector<int>& fieldList, unsigned int* colList) {
     unsigned long long int totRows = m_tables[0]->getNumberOfRows();
-    int maxInt = getMaxNumberInt();
-
+    int maxInt = 10000000; // TEST with lower number  -- getMaxNumberInt();
+                 
     m_nOfRow = (totRows > maxInt) ? maxInt : totRows;
 
     m_gridPts = m_sampleDimensions[0] * m_sampleDimensions[1] * m_sampleDimensions[2];
     m_numNewPts = (m_gridPts > maxInt) ? maxInt : m_gridPts;
 
+  
+    std::cout<<"DEBUG RANK: "<<m_rank<<" - m_nOfRow= "<<m_nOfRow << " totRows= "<<totRows<<" maxint="<<maxInt<<" m_gridPTs="<<m_gridPts<<" m_SampleDimentions "<<m_sampleDimensions[0]<<" - "<<m_sampleDimensions[1]<<"-" <<m_sampleDimensions[2]<<std::endl;
+    
     bool allocationArray = allocateArray((int) fieldList.size());
 
     if (m_fArray == nullptr || m_grid == nullptr || !allocationArray) {
@@ -674,6 +678,8 @@ void VSPointDistributeOp::applyPeriodicBoundary_CIC(int& i1, int& i2, int& i3, i
 
 bool VSPointDistributeOp::processCIC(VSTable& tableGrid, unsigned int* gridList, int nOfField, 
                                      std::vector<int>& fieldList, unsigned long long* gridIndex) {
+
+    
     float wc = 0.0;
     int nCell = m_sampleDimensions[0] * m_sampleDimensions[1] * m_sampleDimensions[2];
     int jkFactor = m_sampleDimensions[0]*m_sampleDimensions[1];
@@ -940,7 +946,7 @@ bool VSPointDistributeOp::execute()
     int counterCols = parsePointColumns(colLs);
 
     if (counterCols != 3) {
-        std::cerr << "VSPointDistributeOp: Invalid columns in --points argument" << std::endl;
+       if(m_rank==0) std::cerr << "VSPointDistributeOp: Invalid columns in --points argument" << std::endl;
         return false;
     }
 
@@ -966,8 +972,16 @@ bool VSPointDistributeOp::execute()
     }
     
     // allocate m_arrays
-    if (!initializeGrid(fieldList, colList)) return false;
-    
+    if (!initializeGrid(fieldList, colList)) 
+    {
+        std::cout << "DEBUG: Rank " << m_rank << " fallito in initializeGrid" << std::endl << std::flush;
+        
+        #ifdef VSMPi
+        MPI_Abort(m_comm,1);
+        #endif
+        
+        return false;
+    }
     //Parameters Setting: gridOrigin
     if(isParameterPresent("gridOrigin"))
         m_OriginSet=setOrigin();
@@ -989,11 +1003,13 @@ bool VSPointDistributeOp::execute()
             return false;
         }
 
+    std::cout << "DEBUG: Rank " << m_rank << " m_numNewPts = " << m_numNewPts << std::endl << std::flush;
+    
     // initialize the grid
     //open file output
     std::string fileNameOutput = generateOutputFileName();
     m_realOutFilename.push_back(fileNameOutput);
-
+    unsigned int* gridList = new unsigned int[nOfField]; 
     // Clean existing tab
     if(m_rank == 0) //only rank 0 clean and create the table. 
     {
@@ -1002,22 +1018,39 @@ bool VSPointDistributeOp::execute()
         configureTableGrid(tableGrid, fieldList);
     
     //  Create Empty Binary File
-        unsigned int* gridList = nullptr;
+      
         if (!initializeEmptyGrid(tableGrid, fieldList, gridList)) 
         {
             delete[] colList;
             return false;
         }
+
+  
     }
+
+    std::cout << "DEBUG: Rank " << m_rank << " sta per chiamare Bcast" << std::endl << std::flush;
+    #ifdef VSMPI
+    std::cout<<"MPI DETECTED--> bcast send"<<std::endl;
+    MPI_Barrier(m_comm); 
+
+    MPI_Bcast(gridList, nOfField, MPI_UNSIGNED, 0, m_comm);
+    
+    std::cout << "DEBUG: Rank " << m_rank << " ha terminato la Bcast" << std::endl << std::flush;
+    
+    #else
+    std::cout<<"TEST NOT MPI "<<std::endl;
+    #endif
+    std::cout << "DEBUG: Rank " << m_rank << " ha superato la barriera, tutti i processi hanno inizializzato la propria griglia" << std::endl << std::flush;
+
     //////////////////////
     /////
     // Start Point Distribution
     ////
     
     //calcuating chunks
-    int chunk_start = totRows / m_size;
-    int rest = totRows % m_size;
-    int my_chunk;
+      unsigned long long int    chunk_start = totRows / m_size;
+       unsigned long long int   rest = totRows % m_size;
+       unsigned long long int   my_chunk;
     if(m_rank < rest)
     {
         gridHandle.totEle = chunk_start +1;
@@ -1028,13 +1061,16 @@ bool VSPointDistributeOp::execute()
         my_chunk  = (m_rank * chunk_start) + rest;
     }
 
+    std::cout<<"Rank= "<<m_rank<<" My chunk is  "<<my_chunk<<std::endl;
+
+    
 
     // set cashed grid on memory
     unsigned long long int gridIndex[2];  //limits of cashed grid
     gridIndex[0]=0;
     gridIndex[1]=m_numNewPts-1;
    // gridHandle.totEle=totRows;
-    gridHandle.startCounter=0;
+    gridHandle.startCounter=my_chunk;
     colList[0]=m_colList[0];
     colList[1]=m_colList[1];
     colList[2]=m_colList[2];
@@ -1051,6 +1087,8 @@ bool VSPointDistributeOp::execute()
     if(isParameterPresent("nodensity") || m_avg)
         cellVolume=1.0;
     
+
+     std::cout << "DEBUG: Rank " << m_rank << " ha totEle = " << gridHandle.totEle << std::endl << std::flush;   
     while(gridHandle.totEle!=0)
     {
         // Table downLoad
@@ -1070,6 +1108,10 @@ bool VSPointDistributeOp::execute()
             if (!processCIC(tableGrid, gridList, nOfField, fieldList, gridIndex)) {
                 delete[] colList;
                 delete[] gridList;
+                #ifdef VSMPI
+                     std::cerr<<"Process CIC failed for rank" << m_rank<<" aborting..."<<std::endl;
+                     MPI_Abort(m_comm,1);
+                #endif
                 return false;
             }
         }
@@ -1102,8 +1144,8 @@ bool VSPointDistributeOp::execute()
     {
         tableGrid.putColumn(gridList,nOfField,gridIndex[0],gridIndex[1],global_grid);  
                 for (int i = 0; i < nOfField; i++) {
-            delete[] global_grid[i];
-        }
+                       delete[] global_grid[i];
+                }
         delete[] global_grid;
     }
     #else
