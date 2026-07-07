@@ -27,8 +27,8 @@
 #include <iostream>
 #include <set>
 
-//const unsigned int VSTableOp::MAX_NUMBER_INT = 2147483647;
-const unsigned int VSTableOp::MAX_NUMBER_INT = 250000000;
+const unsigned int VSTableOp::MAX_NUMBER_INT = 2147483647;
+//const unsigned int VSTableOp::MAX_NUMBER_INT = 250000000;
 //const unsigned int VSTableOp::MAX_NUMBER_INT = 25000000;
 //const unsigned int VSTableOp::MAX_NUMBER_INT = 66000;
 
