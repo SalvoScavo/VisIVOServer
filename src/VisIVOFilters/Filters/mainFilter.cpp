@@ -36,9 +36,7 @@
 
 int main(int argc, char *argv[])
 {
-#ifdef VSMPI
-    std::cout<<"VSMPI"<<std::endl;
-#endif
+
 int size=1,rank=0;
 std::string paramFilename;
 
