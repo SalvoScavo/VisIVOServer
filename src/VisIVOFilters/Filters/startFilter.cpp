@@ -827,9 +827,8 @@ startFilter::startFilter(std::map<std::string,std::string> appParameters)
             /*** PointDistribute  OP **/
         case 12:
         {
-            //serial
-            if(rank==0)  //serialized
-            {
+            //parallel
+           
                 
                 iter =appParameters.find("help");
                 if( iter != appParameters.end())
@@ -860,11 +859,14 @@ startFilter::startFilter(std::map<std::string,std::string> appParameters)
                 VSPointDistributeOp op;
                 op.setParameters(appParameters);
                 #ifdef VSMPI
+                    std::cout<<"MPI Detected, passing communicator"<<std::endl;
                     op.setMPI_Comm(m_VS_COMM);
                 #endif
                 op.addInput(&table);
                 op.execute();
                 valOutFilename=op.realOutFilename();
+             if(rank==0)  //serialized hist
+            {
                 if(m_historyEnabled)
                 {
                     const char* m_historyFile ="hist.xml";
