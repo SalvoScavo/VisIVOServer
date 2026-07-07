@@ -27,9 +27,9 @@
 #include <sstream>
 
 const unsigned int VSTable::MAX_NUMBER_TO_SKIP = 1000000000;
-//const unsigned int VSTable::MAX_NUMBER_ROW_REQUEST = 2147483647;
+const unsigned int VSTable::MAX_NUMBER_ROW_REQUEST = 2147483647;
 //const unsigned int VSTable::MAX_NUMBER_TO_SKIP = 250000000;
-const unsigned int VSTable::MAX_NUMBER_ROW_REQUEST = 250000000;
+//const unsigned int VSTable::MAX_NUMBER_ROW_REQUEST = 250000000;
 
 VSTable::VSTable()
 {
