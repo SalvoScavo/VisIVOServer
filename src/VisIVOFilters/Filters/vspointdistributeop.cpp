@@ -20,7 +20,7 @@
 #include <cstdlib>
 #include <omp.h>
 
-
+#include <cfloat> 
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -264,67 +264,117 @@ bool VSPointDistributeOp::allocateArray(int nField)
 }
 
 //---------------------------------------------------------------------
-bool VSPointDistributeOp::computeModelBounds()
-//---------------------------------------------------------------------
-// Compute ModelBounds from input geometry.
-// bounds are the lower and upper coordinates of the particles
-// in code units
-// serach for min and max coordinates in the table
-{
-    
-    unsigned int counterCols=3;
-    unsigned long long int totRows=m_tables[0]->getNumberOfRows();
-    
-    unsigned long long int totEle=totRows;
-    unsigned long long int fromRow, toRow, startCounter=0;
-    unsigned int nOfValidElement=0;
-    float maxValue[3],minValue[3];
-    while(totEle!=0)
+    bool VSPointDistributeOp::computeModelBounds()
+    //---------------------------------------------------------------------
+    // Compute ModelBounds from input geometry.
+    // bounds are the lower and upper coordinates of the particles
+    // in code units
+    // serach for min and max coordinates in the table
     {
-        fromRow=startCounter;
-        toRow=fromRow+m_nOfRow-1;
-        if(toRow>totRows-1)
-            toRow=totRows-1;
-        m_tables[0]->getColumn(m_colList, counterCols, fromRow, toRow, m_fArray);
-        if(startCounter==0)
+        
+
+        //mpi variables
+        unsigned long long int totRows=m_tables[0]->getNumberOfRows();
+        unsigned long long int chunk_start = totRows / m_size;
+        unsigned long long int rest = totRows % m_size;
+        unsigned long long int my_chunk;
+        if(m_rank < rest)
         {
-            for(int k=0;k<3;k++)
-            {
-                maxValue[k]=m_fArray[k][0];
-                minValue[k]=m_fArray[k][0];
-            }
-        }
-        for(unsigned int j=0;j<(toRow-fromRow+1);j++)
+            gridHandle.totEle = chunk_start +1;
+            my_chunk = m_rank * (chunk_start + 1);
+        }else
         {
-            for(int k=0;k<3;k++)
-            {
-                if(maxValue[k]<m_fArray[k][j]) maxValue[k]=m_fArray[k][j];
-                if(minValue[k]>m_fArray[k][j]) minValue[k]=m_fArray[k][j];
-            }
+            gridHandle.totEle = chunk_start;
+            my_chunk = (m_rank * chunk_start) + rest;
         }
-		startCounter=toRow+1;
-		totEle=totEle-(toRow-fromRow+1);
-		if(totEle<0) totEle=0;
+
+        std::cout<<"DEBUG [COMPUTEMODELBOUNDS] rank "<<m_rank << "chunk "<<my_chunk<<std::endl;
+
+        unsigned int counterCols=3;
+        
+        
+        unsigned long long int totEle = gridHandle.totEle;
+        unsigned long long int fromRow, toRow, startCounter=my_chunk;
+        unsigned long long int endCounter = startCounter + totEle;
+        unsigned int nOfValidElement=0;
+        
+        float maxValue[3] = { -FLT_MAX, -FLT_MAX, -FLT_MAX };  // lowest
+        float minValue[3] = {  FLT_MAX,  FLT_MAX,  FLT_MAX };  // greatest
+        bool isFirstPoint = true;
+
+        while(startCounter < endCounter)
+        {
+            fromRow=startCounter;
+            toRow= fromRow + m_nOfRow - 1;
+
+            if(toRow >= endCounter)
+                toRow=endCounter-1;
+            
+            m_tables[0]->getColumn(m_colList, counterCols, fromRow, toRow, m_fArray);
+        //   std::clog << "DEBUG[COMPUTEMODELBOUNDS]: Lettura da " << fromRow << " a " << toRow << " (totale: " << totRows << ")" << std::endl;
+            if(isFirstPoint)
+            {
+                for(int k=0;k<3;k++)
+                {
+                    maxValue[k]=m_fArray[k][0];
+                    minValue[k]=m_fArray[k][0];
+                }
+                isFirstPoint = false;
+            }
+            for(unsigned int j=0;j<(toRow-fromRow+1);j++)
+            {
+                for(int k=0;k<3;k++)
+                {
+                    if(maxValue[k]<m_fArray[k][j]) maxValue[k]=m_fArray[k][j];
+                    if(minValue[k]>m_fArray[k][j]) minValue[k]=m_fArray[k][j];
+                }
+            }
+            startCounter=toRow+1;
+            
+        }
+        std::clog << "DEBUG[COMPUTEMODELBOUNDS]: Rank : " << m_rank<<" ends"<< std::endl;
+
+        for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" min="<<minValue[i]<<std::endl;//AA
+        for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" max="<<maxValue[i]<<std::endl;//AA
+        
+        //// END search
+        //if mpi defined find real max and min 
+        float globalMaxValue[3];
+        float globalMinValue[3];
+        #ifdef VSMPI
+            MPI_Allreduce(maxValue, globalMaxValue, 3, MPI_FLOAT, MPI_MAX, m_comm);
+            MPI_Allreduce(minValue, globalMinValue, 3, MPI_FLOAT, MPI_MIN, m_comm);
+        #else
+            // IF not MPI, just copy
+            for(int i=0; i<3; i++) {
+                globalMaxValue[i] = maxValue[i];
+                globalMinValue[i] = minValue[i];
+            }
+        #endif
+        
+        if(m_rank == 0)
+        {
+            std::cout<<"GLOBAL MIN AND MAX AFTER REDUCE";
+            for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" min="<<globalMinValue[i]<<std::endl;//AA
+            for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" max="<<globalMaxValue[i]<<std::endl;//AA
+        
+        }
+
+        
+        for(int i=0; i<3; i++) m_modelBounds[2*i] = globalMinValue[i];
+        for(int i=0; i<3; i++) m_modelBounds[2*i+1] = globalMaxValue[i];
+        
+        // Set volume origin and data spacing
+        
+        for (int i=0; i<3; i++)
+        {
+            if(!m_OriginSet)
+                m_origin[i] = m_modelBounds[2*i];
+            if(!m_SpacingSet)
+                m_spacing[i] = (m_modelBounds[2*i+1] - m_origin[i]) / m_sampleDimensions[i];
+        }
+        return true;
     }
-    //  for(int i=0; i<3; i++) std::clog<<"i="<<i<<" min="<<minValue[i]<<std::endl;//AA
-    //  for(int i=0; i<3; i++) std::clog<<"i="<<i<<" max="<<maxValue[i]<<std::endl;//AA
-    
-    //// END search
-    
-    for(int i=0; i<3; i++) m_modelBounds[2*i] = minValue[i];
-    for(int i=0; i<3; i++) m_modelBounds[2*i+1] = maxValue[i];
-    
-    // Set volume origin and data spacing
-    
-    for (int i=0; i<3; i++)
-    {
-        if(!m_OriginSet)
-            m_origin[i] = m_modelBounds[2*i];
-        if(!m_SpacingSet)
-            m_spacing[i] = (m_modelBounds[2*i+1] - m_origin[i]) / m_sampleDimensions[i];
-    }
-    return true;
-}
 
 //---------------------------------------------------------------------
 bool VSPointDistributeOp::setOrigin()
@@ -436,6 +486,7 @@ void VSPointDistributeOp::setAlgorithm() {
         m_ngp = true;
     }
 }
+
 bool VSPointDistributeOp::setGridResolution() {
     std::stringstream ssResolution(getParameterAsString("resolution"));
     int parsedDimensions = 0;
@@ -499,8 +550,13 @@ bool VSPointDistributeOp::allocateColumnList(unsigned int*& colList, const std::
 
 bool VSPointDistributeOp::initializeGrid(const std::vector<int>& fieldList, unsigned int* colList) {
     unsigned long long int totRows = m_tables[0]->getNumberOfRows();
-    int maxInt = 10000000; // TEST with lower number  -- getMaxNumberInt();
-                 
+    int maxInt; 
+    //if parallel limit the buffer
+    if(m_size > 1)
+     maxInt = 10000000; // TEST with lower number  -- getMaxNumberInt();
+    else 
+     maxInt = getMaxNumberInt();
+
     m_nOfRow = (totRows > maxInt) ? maxInt : totRows;
 
     m_gridPts = m_sampleDimensions[0] * m_sampleDimensions[1] * m_sampleDimensions[2];
@@ -617,7 +673,8 @@ void VSPointDistributeOp::configureTableGrid(VSTable& tableGrid, const std::vect
     tableGrid.setCellSize(spacing[0], spacing[1], spacing[2]);
 
     // Write header to the table
-    tableGrid.writeHeader();
+    if(m_rank==0)
+        tableGrid.writeHeader();
 }
 
 bool VSPointDistributeOp::initializeEmptyGrid(VSTable& tableGrid, const std::vector<int>& fieldList, unsigned int*& gridList) {
