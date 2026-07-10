@@ -321,6 +321,7 @@ bool VSPointDistributeOp::allocateArray(int nField)
                 }
                 isFirstPoint = false;
             }
+          //  #pragma omp parallel for reduction(max: maxValue[0:3]) reduction(min: minValue[0:3])
             for(unsigned int j=0;j<(toRow-fromRow+1);j++)
             {
                 for(int k=0;k<3;k++)
@@ -737,77 +738,138 @@ bool VSPointDistributeOp::processCIC(VSTable& tableGrid, unsigned int* gridList,
                                      std::vector<int>& fieldList, unsigned long long* gridIndex) {
 
     
-    float wc = 0.0;
-    int nCell = m_sampleDimensions[0] * m_sampleDimensions[1] * m_sampleDimensions[2];
+      //shared variables
+    int nCell = m_sampleDimensions[0] * m_sampleDimensions[1] * m_sampleDimensions[2]; 
     int jkFactor = m_sampleDimensions[0]*m_sampleDimensions[1];
     int jFactor = m_sampleDimensions[0];
     float cellVolume=m_spacing[0]*m_spacing[1]*m_spacing[2];
-    float norm;
-    for (int ptId = 0; ptId < gridHandle.toRow - gridHandle.fromRow + 1; ptId++) {
-        wc = 0.0;
-        float px[3] = { m_fArray[0][ptId], m_fArray[1][ptId], m_fArray[2][ptId] };
+    bool correct= true;
 
-        float pos1 = (px[0] - m_origin[0]) / m_spacing[0];
-        float pos2 = (px[1] - m_origin[1]) / m_spacing[1];
-        float pos3 = (px[2] - m_origin[2]) / m_spacing[2];
+    int numFields = fieldList.size();
+    unsigned long long int localGridPts = m_numNewPts; 
+    int numParticles = gridHandle.toRow - gridHandle.fromRow + 1;
+   // std::cout<<""<<(float)m_numNewPts/nCell<<std::endl;
+    #pragma omp parallel 
+    {
 
-        int i1 = floor(pos1);
-        int i2 = floor(pos2);
-        int i3 = floor(pos3);
-        int i11 = i1 + 1;
-        int i21 = i2 + 1;
-        int i31 = i3 + 1;
+        int my_id = omp_get_thread_num();
+        int omp_size = omp_get_num_threads();
+        
+        //std::cout<<"[OMP] DEBUG my_id"<<my_id<<" out of "<<omp_size<<std::endl;
+        
+        //local variables
+        float norm; 
+        float wc = 0.0;
+        float **local_grid = new float*[numFields];
 
-        applyPeriodicBoundary_CIC(i1, i2, i3, i11, i21, i31);
+        for (int j = 0; j < numFields; j++) 
+        {
+            local_grid[j] = new float[localGridPts](); 
+        }
+        
+        #pragma omp for schedule(static)
+        for (int ptId = 0; ptId < gridHandle.toRow - gridHandle.fromRow + 1; ptId++) 
+        {
+          
+           // std::cout<<"[OMP]DEBUG my_id: "<<my_id<<" start cycle "<<std::endl;
+            
+            wc = 0.0;
+            float px[3] = { m_fArray[0][ptId], m_fArray[1][ptId], m_fArray[2][ptId] };
 
-        // Compute CIC Weights
-        float weights[8];
-        computeCICWeights(pos1, pos2, pos3, weights);
+            float pos1 = (px[0] - m_origin[0]) / m_spacing[0];
+            float pos2 = (px[1] - m_origin[1]) / m_spacing[1];
+            float pos3 = (px[2] - m_origin[2]) / m_spacing[2];
 
-        // Linearize coordinates
-        unsigned long long int ind[8] = {
-            i3 * jkFactor + i2 * jFactor + i1,
-            i3 * jkFactor + i2 * jFactor + i11,
-            i3 * jkFactor + i21 * jFactor + i1,
-            i3 * jkFactor + i21 * jFactor + i11,
-            i31 * jkFactor + i2 * jFactor + i1,
-            i31 * jkFactor + i2 * jFactor + i11,
-            i31 * jkFactor + i21 * jFactor + i1,
-            i31 * jkFactor + i21 * jFactor + i11
-        };
+            int i1 = floor(pos1);
+            int i2 = floor(pos2);
+            int i3 = floor(pos3);
+            int i11 = i1 + 1;
+            int i21 = i2 + 1;
+            int i31 = i3 + 1;
 
-        // Process density assignment
-        for (int n = 0; n < 8; n++) {
-            if (ind[n] < 0 || ind[n] >= nCell) continue;
+            applyPeriodicBoundary_CIC(i1, i2, i3, i11, i21, i31);
 
-            if (ind[n] < gridIndex[0] || ind[n] > gridIndex[1]) { // Not in cache
-                tableGrid.putColumn(gridList, nOfField, gridIndex[0], gridIndex[1], m_grid);
-                gridIndex[0] = ind[n];
-                gridIndex[1] = gridIndex[0] + m_numNewPts - 1;
-                if (gridIndex[1] >= m_gridPts) gridIndex[1] = m_gridPts - 1;
-                tableGrid.getColumn(gridList, tableGrid.getNumberOfColumns(), gridIndex[0], gridIndex[1], m_grid);
+            // Compute CIC Weights
+            float weights[8];
+            computeCICWeights(pos1, pos2, pos3, weights);
+
+            // Linearize coordinates
+            unsigned long long int ind[8] = {
+                i3 * jkFactor + i2 * jFactor + i1,
+                i3 * jkFactor + i2 * jFactor + i11,
+                i3 * jkFactor + i21 * jFactor + i1,
+                i3 * jkFactor + i21 * jFactor + i11,
+                i31 * jkFactor + i2 * jFactor + i1,
+                i31 * jkFactor + i2 * jFactor + i11,
+                i31 * jkFactor + i21 * jFactor + i1,
+                i31 * jkFactor + i21 * jFactor + i11
+            };
+
+            // Process density assignment
+            for (int n = 0; n < 8; n++) {
+                if (ind[n] < 0 || ind[n] >= nCell) continue;
+
+             /* TEST WITHOUT CACHE (bcause the work is splitted from mpi)
+                #pragma omp critical
+                {
+                    if (ind[n] < gridIndex[0] || ind[n] > gridIndex[1])
+                    { // Not in cache
+                        
+                        
+                            tableGrid.putColumn(gridList, nOfField, gridIndex[0], gridIndex[1], m_grid); 
+                        
+                            gridIndex[0] = ind[n];
+                            gridIndex[1] = gridIndex[0] + m_numNewPts - 1;
+                            if (gridIndex[1] >= m_gridPts) gridIndex[1] = m_gridPts - 1;
+                            tableGrid.getColumn(gridList, tableGrid.getNumberOfColumns(), gridIndex[0], gridIndex[1], m_grid);
+                    
+                    }
+                }
+                */
+
+                for(int j=0;j<fieldList.size();j++)
+                {
+                     if(m_useConstant)
+                        norm=m_constValue;
+                     else
+                         norm=m_fArray[3+j][ptId];
+                            
+                            #pragma omp atomic
+                            m_grid[j][ind[n]] +=weights[n]*norm/cellVolume;
+
+                           //local_grid[j][ind[n]-gridIndex[0]]+=weights[n]*norm/cellVolume;
+                            
+                            wc+=weights[n]*norm; //its private
+
+                }
             }
 
-            for(int j=0;j<fieldList.size();j++)
-                    {
-                        if(m_useConstant)
-                            norm=m_constValue;
-                        else
-                            norm=m_fArray[3+j][ptId];
-                        m_grid[j][ind[n]-gridIndex[0]]+=weights[n]*norm/cellVolume;
-                        wc+=weights[n]*norm;
-                        //		outpippo<<"ptId="<<ptId<<" GRID j="<<j<<" i="<<ind[n]-gridIndex[0] <<" curr val="<<d[n]*norm<<" acc="<<m_grid[j][ind[n]-gridIndex[0]]<<std::endl; //AA
-                    }
+            // Error check
+            if (wc > 1.1 * norm * numFields) {
+            
+                std::cerr << "Error 2 on CIC schema. Operation Aborted" << std::endl;
+                correct=false;
+                
+            }
         }
 
-        // Error check
-        if (wc > 1.1 * norm * fieldList.size()) {
-            std::cerr << "Error 2 on CIC schema. Operation Aborted" << std::endl;
-            return false;
+
+        /* TEST WITHOUT LOCALGRID
+        #pragma omp critical
+        {
+            for(int j=0; j < numFields; j++) {
+                for (unsigned long long int i = 0; i < localGridPts; i++) {
+                    m_grid[j][i] += local_grid[j][i];
+                }
+            }
         }
+        for (int j = 0; j < numFields; j++) {
+            delete[] local_grid[j];
+        }
+        delete[] local_grid;
+        */
     }
-
-    return true;
+    return correct;
 }
 
 void VSPointDistributeOp::applyPeriodicBoundary_TSC(float px[3]) {
