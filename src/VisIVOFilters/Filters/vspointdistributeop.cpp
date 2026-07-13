@@ -553,10 +553,10 @@ bool VSPointDistributeOp::initializeGrid(const std::vector<int>& fieldList, unsi
     unsigned long long int totRows = m_tables[0]->getNumberOfRows();
     int maxInt; 
     //if parallel limit the buffer
-    if(m_size > 1)
-     maxInt = 10000000; // TEST with lower number  -- getMaxNumberInt();
-    else 
-     maxInt = getMaxNumberInt();
+   // if(m_size > 1)
+    // maxInt = getMaxNumberInt(); //10000000; // TEST with lower number  -- getMaxNumberInt();
+    //else 
+    maxInt = getMaxNumberInt();
 
     m_nOfRow = (totRows > maxInt) ? maxInt : totRows;
 
@@ -748,7 +748,7 @@ bool VSPointDistributeOp::processCIC(VSTable& tableGrid, unsigned int* gridList,
     int numFields = fieldList.size();
     unsigned long long int localGridPts = m_numNewPts; 
     int numParticles = gridHandle.toRow - gridHandle.fromRow + 1;
-   // std::cout<<""<<(float)m_numNewPts/nCell<<std::endl;
+    std::cout<<""<<(float)m_numNewPts/nCell<<std::endl;
     #pragma omp parallel 
     {
 
@@ -854,20 +854,7 @@ bool VSPointDistributeOp::processCIC(VSTable& tableGrid, unsigned int* gridList,
         }
 
 
-        /* TEST WITHOUT LOCALGRID
-        #pragma omp critical
-        {
-            for(int j=0; j < numFields; j++) {
-                for (unsigned long long int i = 0; i < localGridPts; i++) {
-                    m_grid[j][i] += local_grid[j][i];
-                }
-            }
-        }
-        for (int j = 0; j < numFields; j++) {
-            delete[] local_grid[j];
-        }
-        delete[] local_grid;
-        */
+        
     }
     return correct;
 }
