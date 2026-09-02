@@ -288,7 +288,7 @@ bool VSPointDistributeOp::allocateArray(int nField)
             my_chunk = (m_rank * chunk_start) + rest;
         }
 
-        std::cout<<"DEBUG [COMPUTEMODELBOUNDS] rank "<<m_rank << "chunk "<<my_chunk<<std::endl;
+      //  std::cout<<"DEBUG [COMPUTEMODELBOUNDS] rank "<<m_rank << "chunk "<<my_chunk<<std::endl;
 
         unsigned int counterCols=3;
         
@@ -333,10 +333,10 @@ bool VSPointDistributeOp::allocateArray(int nField)
             startCounter=toRow+1;
             
         }
-        std::clog << "DEBUG[COMPUTEMODELBOUNDS]: Rank : " << m_rank<<" ends"<< std::endl;
+      //  std::clog << "DEBUG[COMPUTEMODELBOUNDS]: Rank : " << m_rank<<" ends"<< std::endl;
 
-        for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" min="<<minValue[i]<<std::endl;//AA
-        for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" max="<<maxValue[i]<<std::endl;//AA
+      //  for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" min="<<minValue[i]<<std::endl;//AA
+       // for(int i=0; i<3; i++) std::clog<<"rank = "<<m_rank<<"i="<<i<<" max="<<maxValue[i]<<std::endl;//AA
         
         //// END search
         //if mpi defined find real max and min 
@@ -353,13 +353,13 @@ bool VSPointDistributeOp::allocateArray(int nField)
             }
         #endif
         
-        if(m_rank == 0)
-        {
-            std::cout<<"GLOBAL MIN AND MAX AFTER REDUCE";
-            for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" min="<<globalMinValue[i]<<std::endl;//AA
-            for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" max="<<globalMaxValue[i]<<std::endl;//AA
+        //if(m_rank == 0)
+        //{
+           // std::cout<<"GLOBAL MIN AND MAX AFTER REDUCE";
+            //for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" min="<<globalMinValue[i]<<std::endl;//AA
+            //for(int i=0; i<3; i++) std::clog<<"GLOBAL = i="<<i<<" max="<<globalMaxValue[i]<<std::endl;//AA
         
-        }
+        //}
 
         
         for(int i=0; i<3; i++) m_modelBounds[2*i] = globalMinValue[i];
@@ -564,7 +564,7 @@ bool VSPointDistributeOp::initializeGrid(const std::vector<int>& fieldList, unsi
     m_numNewPts = (m_gridPts > maxInt) ? maxInt : m_gridPts;
 
   
-    std::cout<<"DEBUG RANK: "<<m_rank<<" - m_nOfRow= "<<m_nOfRow << " totRows= "<<totRows<<" maxint="<<maxInt<<" m_gridPTs="<<m_gridPts<<" m_SampleDimentions "<<m_sampleDimensions[0]<<" - "<<m_sampleDimensions[1]<<"-" <<m_sampleDimensions[2]<<std::endl;
+    //std::cout<<"DEBUG RANK: "<<m_rank<<" - m_nOfRow= "<<m_nOfRow << " totRows= "<<totRows<<" maxint="<<maxInt<<" m_gridPTs="<<m_gridPts<<" m_SampleDimentions "<<m_sampleDimensions[0]<<" - "<<m_sampleDimensions[1]<<"-" <<m_sampleDimensions[2]<<std::endl;
     
     bool allocationArray = allocateArray((int) fieldList.size());
 
@@ -748,7 +748,7 @@ bool VSPointDistributeOp::processCIC(VSTable& tableGrid, unsigned int* gridList,
     int numFields = fieldList.size();
     unsigned long long int localGridPts = m_numNewPts; 
     int numParticles = gridHandle.toRow - gridHandle.fromRow + 1;
-    std::cout<<""<<(float)m_numNewPts/nCell<<std::endl;
+    //std::cout<<""<<(float)m_numNewPts/nCell<<std::endl;
     #pragma omp parallel 
     {
 
@@ -1080,7 +1080,7 @@ bool VSPointDistributeOp::execute()
     // allocate m_arrays
     if (!initializeGrid(fieldList, colList)) 
     {
-        std::cout << "DEBUG: Rank " << m_rank << " fallito in initializeGrid" << std::endl << std::flush;
+       //: Rank " << m_rank << " fallito in initializeGrid" << std::endl << std::flush;
         
         #ifdef VSMPi
         MPI_Abort(m_comm,1);
@@ -1109,7 +1109,7 @@ bool VSPointDistributeOp::execute()
             return false;
         }
 
-    std::cout << "DEBUG: Rank " << m_rank << " m_numNewPts = " << m_numNewPts << std::endl << std::flush;
+   // std::cout << "DEBUG: Rank " << m_rank << " m_numNewPts = " << m_numNewPts << std::endl << std::flush;
     
     // initialize the grid
     //open file output
@@ -1134,19 +1134,19 @@ bool VSPointDistributeOp::execute()
   
     }
 
-    std::cout << "DEBUG: Rank " << m_rank << " sta per chiamare Bcast" << std::endl << std::flush;
+  //  std::cout << "DEBUG: Rank " << m_rank << " sta per chiamare Bcast" << std::endl << std::flush;
     #ifdef VSMPI
-    std::cout<<"MPI DETECTED--> bcast send"<<std::endl;
+    //std::cout<<"MPI DETECTED--> bcast send"<<std::endl;
     MPI_Barrier(m_comm); 
 
     MPI_Bcast(gridList, nOfField, MPI_UNSIGNED, 0, m_comm);
     
-    std::cout << "DEBUG: Rank " << m_rank << " ha terminato la Bcast" << std::endl << std::flush;
+    //std::cout << "DEBUG: Rank " << m_rank << " ha terminato la Bcast" << std::endl << std::flush;
     
     #else
-    std::cout<<"TEST NOT MPI "<<std::endl;
+    //std::cout<<"TEST NOT MPI "<<std::endl;
     #endif
-    std::cout << "DEBUG: Rank " << m_rank << " ha superato la barriera, tutti i processi hanno inizializzato la propria griglia" << std::endl << std::flush;
+    //std::cout << "DEBUG: Rank " << m_rank << " ha superato la barriera, tutti i processi hanno inizializzato la propria griglia" << std::endl << std::flush;
 
     //////////////////////
     /////
@@ -1167,7 +1167,7 @@ bool VSPointDistributeOp::execute()
         my_chunk  = (m_rank * chunk_start) + rest;
     }
 
-    std::cout<<"Rank= "<<m_rank<<" My chunk is  "<<my_chunk<<std::endl;
+   // std::cout<<"Rank= "<<m_rank<<" My chunk is  "<<my_chunk<<std::endl;
 
     
 
@@ -1194,7 +1194,7 @@ bool VSPointDistributeOp::execute()
         cellVolume=1.0;
     
 
-     std::cout << "DEBUG: Rank " << m_rank << " ha totEle = " << gridHandle.totEle << std::endl << std::flush;   
+    // std::cout << "DEBUG: Rank " << m_rank << " ha totEle = " << gridHandle.totEle << std::endl << std::flush;   
     while(gridHandle.totEle!=0)
     {
         // Table downLoad
